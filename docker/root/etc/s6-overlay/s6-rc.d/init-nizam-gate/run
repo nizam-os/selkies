@@ -1,0 +1,21 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+
+# Secure mode is what makes a lock hold; a master token set by hand wins.
+if [ -z "${SELKIES_MASTER_TOKEN}" ]; then
+  printf "%s" "$(openssl rand -hex 32)" > /run/s6/container_environment/SELKIES_MASTER_TOKEN
+fi
+
+# init-nginx rewrites the site config from its template on every start, so the
+# gate's location goes back in each time.
+sed \
+  -e "s|SUBFOLDER|${SUBFOLDER:-/}|g" \
+  -e "s|GATE_PORT|${GATE_PORT:-8099}|g" \
+  /defaults/nizam-gate.conf > /etc/nginx/nizam-gate.conf
+sed -i \
+  's|^server {$|server {\n  include /etc/nginx/nizam-gate.conf;|' \
+  /etc/nginx/sites-available/default
+
+if [ -z "${GATE_PASSWORD_HASH}" ] && [ -z "${GATE_PASSWORD}" ]; then
+  echo "[nizam-gate] Neither GATE_PASSWORD_HASH nor GATE_PASSWORD is set: the desktop stays locked"
+fi

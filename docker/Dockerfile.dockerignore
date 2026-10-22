@@ -1,0 +1,5 @@
+**/node_modules
+**/dist
+addons/nizam-dashboard/public/selkies-core.js
+docker/config
+docker/.env

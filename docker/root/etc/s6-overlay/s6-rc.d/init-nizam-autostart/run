@@ -1,0 +1,16 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+# The session opens with nizam-main-app (/defaults/autostart). The base image
+# copies its default autostart into the config folder once and never again, so
+# a config folder made before this image carries the stock one, which starts
+# Chromium alone: that one is replaced, and an autostart someone edited is
+# left as it is. Copying over the file keeps the owner and mode RESTART_APP
+# may have locked it with.
+stock=$'#!/bin/bash\nwrapped-chromium ${CHROME_CLI}\n'
+for pair in "openbox:/defaults/autostart" "labwc:/defaults/autostart_wayland"; do
+  target="${HOME}/.config/${pair%%:*}/autostart"
+  if [ -f "${target}" ] && [ "$(cat "${target}"; printf x)" = "${stock}x" ]; then
+    echo "[nizam-init] Opening the session with nizam-main-app instead of Chromium (${target})"
+    cp "${pair#*:}" "${target}"
+  fi
+done

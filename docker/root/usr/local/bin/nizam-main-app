@@ -1,0 +1,69 @@
+#!/bin/bash
+# The session's first window, which the autostart (/defaults/autostart) runs:
+# MAIN_APP, an app from LinuxServer's proot-apps catalog (`claude` unless set),
+# or `chromium` for the image's own browser.
+#
+# The catalog apps in INSTALL_APPS are installed the first time a session
+# starts: the main app first, in the foreground, so its window is the one the
+# session opens with, then the rest in the background. They unpack into
+# ~/proot-apps, which compose.yaml keeps in a volume, so a later start finds
+# them there and downloads nothing. A main app that cannot be installed (no
+# network, proot refused) falls back to Chromium rather than leaving the
+# desktop empty. proot-apps marks a download in progress with a DOWNLOADING
+# file in the app's folder and counts any folder as installed, so a download a
+# container stop cut short is cleared and fetched again rather than run
+# half-unpacked. The launcher and menu entry an install writes live in the
+# config folder, not the volume, so an app whose files are there but whose
+# launcher is not (a new config folder over an old volume) is installed again,
+# which proot-apps does without downloading. The app runs in the foreground, as the stock autostart's
+# Chromium did, so RESTART_APP's watchdog still sees the autostart until it
+# exits. Progress goes to ~/.cache/nizam-apps.log.
+
+PROOT_APPS="${HOME}/.local/bin/proot-apps"
+LOG="${HOME}/.cache/nizam-apps.log"
+main="${MAIN_APP:-claude}"
+IFS=', ' read -r -a wanted <<< "${INSTALL_APPS-claude,chatgpt}"
+
+folder() {
+  echo "${HOME}/proot-apps/ghcr.io_linuxserver_proot-apps_$1"
+}
+
+installed() {
+  [ -d "$(folder "$1")" ] && [ ! -e "$(folder "$1")/DOWNLOADING" ]
+}
+
+integrated() {
+  local bin_name
+  bin_name="$(folder "$1")/bin-name"
+  [ ! -f "${bin_name}" ] || [ -x "${HOME}/.local/bin/$(cat "${bin_name}")" ]
+}
+
+ensure() {
+  installed "$1" && integrated "$1" && return 0
+  if ! installed "$1"; then
+    rm -rf "$(folder "$1")" || return 1
+  fi
+  echo "$(date -Is) installing $1" >> "${LOG}"
+  "${PROOT_APPS}" install "$1" >> "${LOG}" 2>&1
+  installed "$1"
+}
+
+mkdir -p "$(dirname "${LOG}")"
+if [ "${main}" != "chromium" ] && ! ensure "${main}"; then
+  echo "$(date -Is) ${main} is not installed; opening Chromium instead" >> "${LOG}"
+  main=chromium
+fi
+(
+  for app in "${wanted[@]}"; do
+    if [ -n "${app}" ] && [ "${app}" != "${main}" ] && [ "${app}" != "chromium" ]; then
+      ensure "${app}"
+    fi
+  done
+) &
+
+if [ "${main}" = "chromium" ]; then
+  # shellcheck disable=SC2086 # CHROME_CLI is a list of flags, as the stock autostart has it.
+  wrapped-chromium ${CHROME_CLI}
+else
+  "${PROOT_APPS}" run "${main}"
+fi

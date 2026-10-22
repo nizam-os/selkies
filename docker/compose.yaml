@@ -1,0 +1,27 @@
+# `docker compose up` pulls the published image; `docker compose build` (or
+# `up --build`) builds this checkout under the same name instead.
+services:
+  chromium:
+    image: ghcr.io/nizam-os/selkies-chromium:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: Etc/UTC
+      GATE_PASSWORD_HASH: ${GATE_PASSWORD_HASH:?put the output of gate.py hash in .env beside compose.yaml}
+    ports:
+      - "3001:3001"
+    shm_size: 1gb
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - ./config:/config
+      # Apps installed from the dock unpack here; a host folder cannot hold
+      # them (README, "Installing apps").
+      - proot-apps:/config/proot-apps
+    restart: unless-stopped
+
+volumes:
+  proot-apps:

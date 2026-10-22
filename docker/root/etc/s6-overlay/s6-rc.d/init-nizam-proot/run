@@ -1,0 +1,9 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+
+# compose.yaml mounts a volume at ~/proot-apps, since a bind-mounted host
+# folder (Docker Desktop's virtiofs) cannot hold an unpacked app. A new volume
+# comes up empty and root-owned, and proot-apps unpacks into it as abc.
+if [ -d /config/proot-apps ]; then
+  lsiown abc:abc /config/proot-apps
+fi
