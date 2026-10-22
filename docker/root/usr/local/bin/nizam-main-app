@@ -4,7 +4,8 @@
 # or `chromium` for the image's own browser.
 #
 # The catalog apps in INSTALL_APPS are installed the first time a session
-# starts: the main app first, in the foreground, so its window is the one the
+# starts; `none` installs none, since s6 unsets a variable set to an empty
+# value, so an empty INSTALL_APPS reaches the session as the default: the main app first, in the foreground, so its window is the one the
 # session opens with, then the rest in the background. They unpack into
 # ~/proot-apps, which compose.yaml keeps in a volume, so a later start finds
 # them there and downloads nothing. A main app that cannot be installed (no
@@ -22,7 +23,9 @@
 PROOT_APPS="${HOME}/.local/bin/proot-apps"
 LOG="${HOME}/.cache/nizam-apps.log"
 main="${MAIN_APP:-claude}"
-IFS=', ' read -r -a wanted <<< "${INSTALL_APPS-claude,chatgpt}"
+apps="${INSTALL_APPS:-claude,chatgpt}"
+[ "${apps}" = none ] && apps=""
+IFS=', ' read -r -a wanted <<< "${apps}"
 
 folder() {
   echo "${HOME}/proot-apps/ghcr.io_linuxserver_proot-apps_$1"

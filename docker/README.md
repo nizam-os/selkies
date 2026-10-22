@@ -38,7 +38,7 @@ git-ignored.
 | `SELKIES_MASTER_TOKEN` | random per start | Only set it to call Selkies' token API yourself. |
 | `GATE_PORT` | `8099` | Loopback port of the gate behind nginx. |
 | `MAIN_APP` | `claude` | The app the session opens with: a proot-apps catalog name, or `chromium` for the image's browser. |
-| `INSTALL_APPS` | `claude,chatgpt` | Comma-separated proot-apps catalog names installed when a session first starts (README, "Installing apps"). Empty installs none. |
+| `INSTALL_APPS` | `claude,chatgpt` | Comma-separated proot-apps catalog names installed when a session first starts (README, "Installing apps"). `none` installs none; an empty value counts as unset. |
 | `GATE_DOCK_HIDE` | `foot.desktop,foot-server.desktop,footclient.desktop,st.desktop,debian-uxterm.desktop,debian-xterm.desktop` | Comma-separated desktop file IDs kept out of the dock: by default the image's terminals. Setting it replaces the list. |
 
 Everything else is LinuxServer's Chromium image (`CHROME_CLI`, `TITLE`,
