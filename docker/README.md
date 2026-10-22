@@ -49,14 +49,20 @@ of the locked page.
 
 Selkies runs in secure mode, where nothing streams without a session token
 from its token table. The gate (`root/opt/nizam-gate/gate.py`) is the only
-holder of the master token that edits the table:
+holder of the master token that edits the table. The browser gets the token
+only as an HttpOnly cookie, which nginx turns into what Selkies reads
+(`root/defaults/nizam-gate.conf`). The address bar, the history, and the URLs
+the browser requests never hold it, so a proxy logging those has nothing to
+replay. WebRTC signaling would need the token in the page itself, so the image
+streams over WebSockets only (`SELKIES_ENABLE_DUAL_MODE=false`).
 
 - login: password checked, one fresh token provisioned, every older token
   dropped (another device logging in locks this one);
 - lock: the table is emptied, and Selkies cuts the stream server-side;
-- the page (`addons/nizam-dashboard/src/gate/`) starts the stream only with a
-  live token and returns to the locked screen within ~5 s of a lock made
-  elsewhere;
+- the page (`addons/nizam-dashboard/src/gate/`) starts the stream only in the
+  tab that logged in, while its session is live, and returns to the locked
+  screen within ~5 s of a lock made elsewhere; any other tab opens on the
+  locked screen;
 - Back or Forward locks: Back from the desktop lands on the locked screen kept
   behind it and locks the session, and Forward (or Back to a desktop left any
   other way) opens the locked screen rather than resuming. A reload keeps the
@@ -83,7 +89,7 @@ Selkies' menu bar is gone. Instead:
   Chromium, which stays in the dock.
 
 The dock's list comes from the gate's `auth/apps` endpoint, behind the same
-session token as everything else. Launching uses Selkies' command channel,
+session cookie as everything else. Launching uses Selkies' command channel,
 which the image turns on unless `HARDEN_DESKTOP=true` or
 `SELKIES_COMMAND_ENABLED=false`; without it the dock holds Settings only.
 

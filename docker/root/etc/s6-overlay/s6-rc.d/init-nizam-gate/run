@@ -7,10 +7,11 @@ if [ -z "${SELKIES_MASTER_TOKEN}" ]; then
 fi
 
 # init-nginx rewrites the site config from its template on every start, so the
-# gate's location goes back in each time.
+# gate's locations go back in each time.
 sed \
   -e "s|SUBFOLDER|${SUBFOLDER:-/}|g" \
   -e "s|GATE_PORT|${GATE_PORT:-8099}|g" \
+  -e "s|CWS|${CUSTOM_WS_PORT:-8082}|g" \
   /defaults/nizam-gate.conf > /etc/nginx/nizam-gate.conf
 sed -i \
   's|^server {$|server {\n  include /etc/nginx/nizam-gate.conf;|' \

@@ -7,10 +7,10 @@
 /**
  * Entry point of the nizam dashboard.
  *
- * Without a session token the gate still recognizes, or when the page was
- * reached by Back or Forward, which locks the session instead (`gate/gate.ts`),
- * it renders the locked page (`gate/Landing.tsx`) and never starts the core.
- * Otherwise it holds that token for the tab and watches it for a lock made
+ * Unless this tab logged into a session the gate still recognizes, or when the
+ * page was reached by Back or Forward, which locks the session instead
+ * (`gate/gate.ts`), it renders the locked page (`gate/Landing.tsx`) and never
+ * starts the core. Otherwise it watches the session for a lock made
  * elsewhere, then probes `/api/status` for the server's streaming mode and
  * dual-mode flag, publishes them as `window.__SELKIES_STREAMING_MODE__` and
  * `window.__SELKIES_DUAL_MODE__`, waits for the runtime-served core script to
@@ -30,10 +30,7 @@ import {
   arrivedThroughHistory,
   checkSession,
   dropHeldSession,
-  dropSession,
-  forgetPageToken,
-  holdSession,
-  pageToken,
+  holdsSession,
   watchSession,
 } from './gate/gate.ts';
 import { installLockShortcut } from './gate/shortcut.ts';
@@ -91,32 +88,25 @@ async function waitForCore(timeoutMs = 10000) {
 }
 
 /**
- * Whether the page may start the stream: it holds a session token that the
- * gate has not revoked, and it was not reached by Back or Forward. That
- * arrival locks both the session in the address bar and the one the tab last
- * held, since it is either Forward into a desktop left by Back or Back onto
- * the locked page kept behind one (`gate/gate.ts`). A gate that cannot answer
- * is no reason to stay locked, since Selkies refuses a dead token itself; a
- * token the page will not use is taken out of the address bar. A live one is
- * held for the tab, and the lock shortcut goes in before the core's own key
+ * Whether the page may start the stream: this tab logged in, the gate has not
+ * revoked that session, and the page was not reached by Back or Forward, which
+ * locks the session instead (`gate/gate.ts`). A gate that cannot answer is no
+ * reason to stay locked, since Selkies refuses a dead token itself. A live
+ * session is watched, and the lock shortcut goes in before the core's own key
  * listener (`gate/shortcut.ts`).
  * @returns {Promise<boolean>}
  */
 async function holdsLiveSession() {
-  const token = pageToken();
   if (arrivedThroughHistory()) {
-    forgetPageToken();
-    if (token) void dropSession(token);
     dropHeldSession();
     return false;
   }
-  if (!token) return false;
-  if ((await checkSession(token)) === 'revoked') {
-    forgetPageToken();
+  if (!holdsSession()) return false;
+  if ((await checkSession()) === 'revoked') {
+    dropHeldSession();
     return false;
   }
-  holdSession(token);
-  watchSession(token);
+  watchSession();
   installLockShortcut();
   return true;
 }

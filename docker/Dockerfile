@@ -32,4 +32,8 @@ RUN installed="$(/lsiopy/bin/pip show selkies | awk '/^Version:/{print $2}')" &&
     fi
 COPY --from=ui /src/addons/nizam-dashboard/dist /usr/share/selkies/nizam-dashboard
 COPY docker/root/ /
-ENV DASHBOARD=nizam-dashboard
+# The session token reaches Selkies only from the gate's cookie, through nginx
+# (gate.py), and WebRTC signaling wants it in a message the page itself sends,
+# so the stream stays on WebSockets.
+ENV DASHBOARD=nizam-dashboard \
+    SELKIES_ENABLE_DUAL_MODE=false

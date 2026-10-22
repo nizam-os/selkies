@@ -11,14 +11,20 @@ The table lives in Selkies' memory. The gate therefore resets it to empty when
 the gate starts, since a restarted gate no longer knows which token it handed
 out, and puts its token back when a restarted Selkies has lost it.
 
+The token reaches the browser only as the `sid` cookie, HttpOnly and
+SameSite=Strict, so no URL, page script, or response body ever holds it, and
+a log of the URLs the browser requests has nothing to replay. nginx hands the
+cookie to Selkies in the two forms Selkies reads (`nizam-gate.conf`), a Bearer
+header and, for the WebSocket handshake, `?token=` on the proxied request.
+
 Endpoints, under `<subfolder>auth/`:
 
-- `POST login` with `{"password": ...}`: 200 `{"token": ...}`, 403 for a wrong
-  password, 429 while the caller is throttled.
-- `POST lock` with `Authorization: Bearer <token>`: 204, or 403 when the token
-  is not the live one.
-- `GET session` with the same header: 204 while the token is live, else 403.
-- `GET apps` with the same header: the desktop's applications for the dock
+- `POST login` with `{"password": ...}`: 204 with the cookie set, 403 for a
+  wrong password, 429 while the caller is throttled.
+- `POST lock` with the cookie: 204, or 403 when it is not the live session;
+  either way the cookie is cleared.
+- `GET session` with the cookie: 204 while it is the live session, else 403.
+- `GET apps` with the cookie: the desktop's applications for the dock
   (`DesktopApps`), or 403.
 
 None of them answers 401: the core reloads the page on any same-origin 401
@@ -395,9 +401,22 @@ def _error(status: int, message: str, **headers: str) -> web.Response:
     return web.json_response({"error": message}, status=status, headers=headers)
 
 
-def _bearer(request: web.Request) -> str:
-    header = request.headers.get("Authorization", "")
-    return header[7:].strip() if header[:7].lower() == "bearer " else ""
+SESSION_COOKIE = "sid"
+
+
+def _set_session_cookie(response: web.StreamResponse, request: web.Request, path: str,
+                        token: Optional[str]) -> None:
+    """Sets the session cookie to `token`, or clears it for None.
+
+    Secure whenever the browser reached nginx over HTTPS; the plain-HTTP port
+    gets a cookie it can send back, or a login there could never stream.
+    """
+    if token is None:
+        response.del_cookie(SESSION_COOKIE, path=path)
+        return
+    response.set_cookie(
+        SESSION_COOKIE, token, path=path, httponly=True, samesite="Strict",
+        secure=request.headers.get("X-Forwarded-Proto") == "https")
 
 
 class Gate:
@@ -405,8 +424,10 @@ class Gate:
 
     KEEP_INTERVAL = 10
 
-    def __init__(self, selkies: Selkies, verifier: Optional[PasswordVerifier], apps: DesktopApps):
+    def __init__(self, selkies: Selkies, verifier: Optional[PasswordVerifier], apps: DesktopApps,
+                 cookie_path: str):
         self._selkies = selkies
+        self._cookie_path = cookie_path
         self._verifier = verifier
         self._apps = apps
         self._throttle = Throttle()
@@ -415,7 +436,8 @@ class Gate:
         self._verifying = asyncio.Semaphore(2)
         self._ready = asyncio.Event()
 
-    def _is_live(self, presented: str) -> bool:
+    def _is_live(self, request: web.Request) -> bool:
+        presented = request.cookies.get(SESSION_COOKIE, "")
         return bool(self._token and presented) and hmac.compare_digest(presented, self._token)
 
     async def run(self) -> None:
@@ -478,12 +500,16 @@ class Gate:
                 return _error(503, "The desktop is not reachable")
             self._token = token
         logger.info("Unlocked from %s", key)
-        return web.json_response({"token": token}, headers={"Cache-Control": "no-store"})
+        response = web.Response(status=204, headers={"Cache-Control": "no-store"})
+        _set_session_cookie(response, request, self._cookie_path, token)
+        return response
 
     async def lock(self, request: web.Request) -> web.Response:
         async with self._table_lock:
-            if not self._is_live(_bearer(request)):
-                return _error(403, "Not the live session")
+            if not self._is_live(request):
+                response = _error(403, "Not the live session")
+                _set_session_cookie(response, request, self._cookie_path, None)
+                return response
             try:
                 await self._selkies.provision({})
             except (ClientError, asyncio.TimeoutError, RuntimeError) as exc:
@@ -491,15 +517,17 @@ class Gate:
                 return _error(503, "The desktop is not reachable")
             self._token = None
         logger.info("Locked from %s", client_key(request))
-        return web.Response(status=204)
+        response = web.Response(status=204)
+        _set_session_cookie(response, request, self._cookie_path, None)
+        return response
 
     async def session(self, request: web.Request) -> web.Response:
-        if self._is_live(_bearer(request)):
+        if self._is_live(request):
             return web.Response(status=204, headers={"Cache-Control": "no-store"})
         return _error(403, "Not the live session")
 
     async def apps(self, request: web.Request) -> web.Response:
-        if not self._is_live(_bearer(request)):
+        if not self._is_live(request):
             return _error(403, "Not the live session")
         apps = await asyncio.get_running_loop().run_in_executor(None, self._apps.list)
         return web.json_response({"apps": apps}, headers={"Cache-Control": "no-store"})
@@ -535,6 +563,7 @@ async def build_app() -> web.Application:
         Selkies(session, f"http://127.0.0.1:{selkies_port}{prefix}", master_token),
         load_verifier(),
         DesktopApps({name.strip() for name in hidden.split(",") if name.strip()}),
+        f"{prefix}/",
     )
     app = web.Application(client_max_size=16 * 1024)
     app.add_routes([
